@@ -10,6 +10,11 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
+import urllib3
+
+# Kleinbetriebe haben oft fehlerhafte Zertifikate; bei SSL-Fehler fällt get() auf
+# verify=False zurück. Die zugehörige Warnung unterdrücken.
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # WICHTIG: kein "Mozilla/..."-Prefix! Die Overpass-API liefert für browser-artige
 # User-Agents 406 Not Acceptable. Ein ehrlicher Bot-UA wird von Overpass UND den
@@ -146,10 +151,17 @@ class HttpClient:
         for attempt in range(self.max_retries + 1):
             self._throttle(host)
             try:
-                r = self.session.request(
-                    method, url, data=data, headers=headers,
-                    timeout=self.timeout, allow_redirects=True,
-                )
+                try:
+                    r = self.session.request(
+                        method, url, data=data, headers=headers,
+                        timeout=self.timeout, allow_redirects=True,
+                    )
+                except requests.exceptions.SSLError:
+                    # kaputtes Zertifikat -> einmal ohne Verifikation versuchen
+                    r = self.session.request(
+                        method, url, data=data, headers=headers,
+                        timeout=self.timeout, allow_redirects=True, verify=False,
+                    )
                 # Encoding: wenn der Server keinen charset-Header schickt, setzt
                 # requests fälschlich ISO-8859-1 -> Umlaute kaputt. Dann erraten.
                 ctype = r.headers.get("content-type", "").lower()
