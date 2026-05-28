@@ -30,7 +30,19 @@ BLOCKLIST = {
     "powerappsportals.com", "ekomi.de", "localytix.de", "microsoft.com", "bing.com",
     "apple.com", "whatsapp.com", "t.me", "wa.me", "goo.gl", "bit.ly",
     "demapscompany.org",
+    # Rauschen auf Das-Örtliche-Detailseiten
+    "dtme.de", "tvg-verlag.de", "bahn.de", "kennstdueinen.de", "consentmanager.net",
 }
+
+# Linktext, der selbst wie eine URL/Domain aussieht (Das Örtliche zeigt die Website
+# als Klartext-URL statt mit dem Label "Website").
+_URLISH = re.compile(
+    r"^(?:https?://|www\.)|^[a-z0-9][a-z0-9.\-]*\.(?:de|com|net|org|eu|info|biz|shop|salon|hamburg|berlin)\b"
+)
+
+
+def _looks_like_url(text: str) -> bool:
+    return bool(_URLISH.match(text.strip().lower()))
 
 # Substrings, die auf Aggregatoren/Buchungsplattformen hindeuten (auch Subdomains
 # wie linie2friseur.mytreatwell.de). Deren Seiten haben kein eigenes Impressum.
@@ -78,7 +90,7 @@ def website_from_detail_page(client: HttpClient, detail_url: str) -> str | None:
         if _is_blocked(host):
             continue
         text = a.get_text(" ", strip=True).lower()
-        if any(lbl in text for lbl in _WEBSITE_LABELS):
+        if any(lbl in text for lbl in _WEBSITE_LABELS) or _looks_like_url(text):
             return f"https://{_registrable(host)}/"
     return None
 

@@ -14,7 +14,7 @@ Rate-Limits, Caching) ist Standard.
 |---|---|---|---|
 | OpenStreetMap / Overpass API | **aktiv** | API (ODbL) | Name/Adresse/Website/Branche; lückenhaft außerhalb von Großstädten |
 | 11880.com | **aktiv** | erlaubt (Suche frei) | Listing als JSON-LD (50/Seite); eigene Website per Suche aufgelöst |
-| Das Örtliche (dasoertliche.de) | geplant | `Disallow:` leer = alles erlaubt | Einträge enthalten oft Website |
+| Das Örtliche (dasoertliche.de) | **aktiv** | `Disallow:` leer = alles erlaubt | Listing-JSON-LD (/Themen/<Branche>/<Stadt>.html); Website via Detailseite |
 | GoYellow (goyellow.de) | geplant | `/suche/` erlaubt (außer Filter-Params) | |
 | meinestadt.de | geplant | großteils erlaubt | |
 | stadtbranchenbuch.com | geplant | `/search` gesperrt → Kategorie-/Detailseiten nutzen | |
