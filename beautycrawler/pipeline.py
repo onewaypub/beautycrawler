@@ -226,6 +226,15 @@ def run(
         b.website_status = "ok"
         m.website_ok += 1
 
+        # Instagram-Handle aus der Homepage (für spätere Werbe-Kanäle)
+        if not b.instagram:
+            try:
+                ig = imp.find_instagram(home.text)
+                if ig:
+                    b.instagram = ig
+            except Exception:
+                pass
+
         # 5) Felder aus Impressum
         impressum_text = ""
         if impressum_url:

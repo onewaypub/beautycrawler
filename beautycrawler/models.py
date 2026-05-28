@@ -28,17 +28,47 @@ CSV_FIELDS = [
     "bereiche",
     "webseite",
     "geschaeftsfuehrer_inhaber",
+    "anrede",
+    "vorname",
+    "nachname",
     "adresse",
     "email",
     "telefon",
     "fax",
     "ust_idnr",
+    "oeffnungszeiten",
+    "zielgruppe",
+    "instagram",
     "geschaetzte_mitarbeiter",
     "groessen_konfidenz",
     "groessen_basis",
     "quelle",
     "stand",
 ]
+
+_TITLE_PREFIX = re.compile(r"^(?:Dr\.|Prof\.|Dipl\.[-\wäöü]*|Herrn?|Frau)\s+", re.IGNORECASE)
+
+
+def split_owner_name(owner: str | None) -> tuple[str, str]:
+    """Owner-Name in (Vorname, Nachname) zerlegen (Titel/Anrede vorab entfernen)."""
+    if not owner:
+        return "", ""
+    n = owner.strip()
+    while True:
+        m = _TITLE_PREFIX.match(n)
+        if not m:
+            break
+        n = n[m.end():].strip()
+    parts = n.split()
+    if not parts:
+        return "", ""
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], " ".join(parts[1:])
+
+
+def salutation(gender: str | None) -> str:
+    return {"f": "Frau", "m": "Herr"}.get(gender or "", "")
 
 
 def normalize_name(name: str) -> str:
@@ -89,6 +119,12 @@ class Business:
     impressum_url: str | None = None
     impressum_address: str | None = None
 
+    # Zusatzfelder für Werbemaßnahmen
+    opening_hours: str | None = None
+    audience: str | None = None          # Damen / Herren / Unisex
+    instagram: str | None = None
+    owner_gender: str | None = None      # 'f' / 'm' -> Anrede
+
     # Größenschätzung
     size_estimate: str | None = None
     size_confidence: str | None = None
@@ -127,21 +163,29 @@ class Business:
         for attr in (
             "website", "street", "postcode", "city", "phone", "owner",
             "email", "fax", "vat_id", "impressum_url", "impressum_address", "detail_url",
+            "opening_hours", "audience", "instagram", "owner_gender",
         ):
             if not getattr(self, attr) and getattr(other, attr):
                 setattr(self, attr, getattr(other, attr))
 
     def to_csv_row(self) -> dict:
+        vorname, nachname = split_owner_name(self.owner)
         return {
             "firmenname": self.name or "",
             "bereiche": "; ".join(self.categories),
             "webseite": self.website or "",
             "geschaeftsfuehrer_inhaber": self.owner or "",
+            "anrede": salutation(self.owner_gender),
+            "vorname": vorname,
+            "nachname": nachname,
             "adresse": self.impressum_address or self.address,
             "email": self.email or "",
             "telefon": self.phone or "",
             "fax": self.fax or "",
             "ust_idnr": self.vat_id or "",
+            "oeffnungszeiten": self.opening_hours or "",
+            "zielgruppe": self.audience or "",
+            "instagram": self.instagram or "",
             "geschaetzte_mitarbeiter": self.size_estimate or "",
             "groessen_konfidenz": self.size_confidence or "",
             "groessen_basis": self.size_basis or "",

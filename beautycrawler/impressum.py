@@ -93,6 +93,80 @@ def _deobfuscate_email(text: str) -> str:
     return t
 
 
+# --- Instagram ------------------------------------------------------------
+_INSTAGRAM = re.compile(r"instagram\.com/([A-Za-z0-9_.]+)", re.IGNORECASE)
+_IG_SKIP = {"p", "explore", "reel", "reels", "tv", "stories", "accounts",
+            "about", "developer", "legal", "privacy", "directory", "share"}
+
+
+def find_instagram(html: str) -> str | None:
+    soup = BeautifulSoup(html, "lxml")
+    for a in soup.find_all("a", href=True):
+        m = _INSTAGRAM.search(a["href"])
+        if m:
+            handle = m.group(1).strip("/").lower()
+            if handle and handle not in _IG_SKIP:
+                return f"https://instagram.com/{handle}"
+    m = _INSTAGRAM.search(html)
+    if m:
+        handle = m.group(1).strip("/").lower()
+        if handle and handle not in _IG_SKIP:
+            return f"https://instagram.com/{handle}"
+    return None
+
+
+# --- Geschlecht / Anrede --------------------------------------------------
+_FEMALE_NAMES = {
+    "anna", "anne", "andrea", "angelika", "anja", "anke", "antje", "beate", "bettina",
+    "birgit", "brigitte", "christina", "christine", "claudia", "cornelia", "dagmar",
+    "daniela", "diana", "doris", "edith", "elke", "ellen", "eva", "franziska", "gabi",
+    "gabriele", "gisela", "hanna", "hannah", "heike", "helga", "ines", "inge", "ingrid",
+    "iris", "jana", "jasmin", "jessica", "johanna", "judith", "julia", "jutta", "karin",
+    "karina", "katharina", "katja", "katrin", "kerstin", "kristin", "lara", "laura",
+    "lena", "leonie", "lisa", "lydia", "magdalena", "manuela", "maria", "marion",
+    "marlene", "martina", "melanie", "miriam", "monika", "nadine", "natalie", "nicole",
+    "petra", "pia", "ramona", "rebecca", "regina", "renate", "rita", "ruth", "sabine",
+    "sabrina", "sandra", "sara", "sarah", "saskia", "silke", "simone", "sonja", "sophia",
+    "sophie", "stefanie", "steffi", "susanne", "svenja", "sylvia", "tanja", "theresa",
+    "ulrike", "ursula", "ute", "vanessa", "vera", "verena", "viktoria", "wiebke",
+    "yvette", "yvonne",
+}
+_MALE_NAMES = {
+    "alexander", "andre", "andré", "andreas", "axel", "ben", "benjamin", "bernd",
+    "bernhard", "björn", "bjoern", "carsten", "christian", "christoph", "daniel",
+    "dennis", "dieter", "dirk", "dominik", "eric", "erik", "fabian", "felix", "florian",
+    "frank", "georg", "gerd", "günter", "guenter", "hans", "harald", "heiko", "heinz",
+    "holger", "jan", "jens", "joachim", "jochen", "johannes", "jonas", "jörg", "joerg",
+    "jürgen", "juergen", "kai", "karl", "kay", "kevin", "klaus", "lars", "leon", "lukas",
+    "manfred", "marc", "marcel", "marco", "mario", "mark", "markus", "martin", "matthias",
+    "maximilian", "michael", "niklas", "norbert", "oliver", "patrick", "paul", "peter",
+    "philipp", "rainer", "ralf", "ralph", "rene", "rené", "robert", "roland", "rolf",
+    "rudolf", "sascha", "sebastian", "stefan", "stephan", "sven", "thomas", "thorsten",
+    "tim", "tobias", "tom", "udo", "ulrich", "uwe", "volker", "walter", "wolfgang",
+}
+
+
+def guess_gender(text: str, owner: str | None) -> str | None:
+    """Geschlecht des Inhabers heuristisch: 'Frau/Herr X', Vornamenliste, '-in'-Titel."""
+    from .models import split_owner_name
+
+    first, _ = split_owner_name(owner)
+    if not first:
+        return None
+    if re.search(rf"\bFrau\s+{re.escape(first)}\b", text):
+        return "f"
+    if re.search(rf"\bHerrn?\s+{re.escape(first)}\b", text):
+        return "m"
+    fl = first.lower()
+    if fl in _FEMALE_NAMES:
+        return "f"
+    if fl in _MALE_NAMES:
+        return "m"
+    if re.search(r"\bInhaberin\b|Gesch[äa]ftsf[üu]hrerin\b", text):
+        return "f"
+    return None
+
+
 def find_impressum_url(client: HttpClient, homepage_url: str) -> tuple[str | None, Response | None]:
     """Liefert (impressum_url | None, homepage_response). homepage_response für Status/Reuse."""
     home = client.get(homepage_url)
@@ -176,5 +250,7 @@ def extract_fields(html: str) -> dict:
         vat = re.sub(r"\s+", "", mv.group(0))
 
     address = _extract_address(text)
+    owner_gender = guess_gender(text, owner)
 
-    return {"owner": owner, "email": email, "phone": phone, "fax": fax, "vat_id": vat, "impressum_address": address}
+    return {"owner": owner, "owner_gender": owner_gender, "email": email, "phone": phone,
+            "fax": fax, "vat_id": vat, "impressum_address": address}

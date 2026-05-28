@@ -38,6 +38,18 @@ def _categories_from_tags(tags: dict) -> list[str]:
     return list(dict.fromkeys(cats)) or (["Kosmetik"] if shop == "beauty" else [])
 
 
+def _audience_from_tags(tags: dict) -> str | None:
+    female = tags.get("female") == "yes"
+    male = tags.get("male") == "yes"
+    if tags.get("unisex") == "yes" or (female and male):
+        return "Unisex"
+    if female:
+        return "Damen"
+    if male:
+        return "Herren"
+    return None
+
+
 class OsmSource(Source):
     name = "osm"
 
@@ -91,6 +103,8 @@ class OsmSource(Source):
                 city=tags.get("addr:city") or area.city,
                 phone=tags.get("phone") or tags.get("contact:phone"),
                 sources=[self.name],
+                opening_hours=tags.get("opening_hours"),
+                audience=_audience_from_tags(tags),
             )
             out.append(biz)
             if limit and len(out) >= limit:
