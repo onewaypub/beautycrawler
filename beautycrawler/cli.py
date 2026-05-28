@@ -53,6 +53,7 @@ def main(argv=None):
     p.add_argument("--use-ddg", action="store_true", help="DuckDuckGo-Websuche als Fallback (langsam, kann blockiert werden)")
     p.add_argument("--out", default="output/salons.csv", help="CSV-Ausgabepfad")
     p.add_argument("--delay", type=float, default=1.5, help="Mindestabstand pro Host (Sekunden)")
+    p.add_argument("--workers", type=int, default=1, help="Parallele Worker (verschiedene Hosts gleichzeitig; pro Host bleibt seriell). Für große Läufe z. B. 8.")
     p.add_argument("--timeout", type=float, default=15.0)
     p.add_argument("--quiet", action="store_true", help="Nur Warnungen + Endbericht in der Konsole")
     p.add_argument("--no-log-file", action="store_true", help="Keine Logdatei schreiben")
@@ -78,8 +79,8 @@ def main(argv=None):
     logger.info("=" * 60)
     logger.info("beautycrawler — Start")
     logger.info("  Gebiet=%s  bbox=%s", area.name, bbox)
-    logger.info("  Quellen=%s  Limit=%s  Website-Auflösung=%s",
-                [s.name for s in sources], args.limit or "∞", "an" if not args.no_resolve else "aus")
+    logger.info("  Quellen=%s  Limit=%s  Website-Auflösung=%s  Workers=%d",
+                [s.name for s in sources], args.limit or "∞", "an" if not args.no_resolve else "aus", args.workers)
     if log_path:
         logger.info("  Logdatei: %s", log_path)
     logger.info("  CSV-Ausgabe: %s", args.out)
@@ -101,6 +102,7 @@ def main(argv=None):
         keep_confidences=keep_confidences,
         resolve_missing=not args.no_resolve,
         use_ddg=args.use_ddg,
+        workers=args.workers,
         out_path=args.out,
     )
 

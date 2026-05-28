@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import csv
 import logging
+import threading
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -121,6 +123,7 @@ def run(
     keep_confidences: set[str] | None = None,
     resolve_missing: bool = True,
     use_ddg: bool = False,
+    workers: int = 1,
     out_path: str = "output/salons.csv",
 ) -> Metrics:
     m = Metrics()
@@ -161,16 +164,18 @@ def run(
 
     kept: list[Business] = []
     seen_domains: set[str] = set()
-    for b in ordered:
-        if cap and m.processed >= cap:
-            log.info("  Limit von %d verarbeiteten Firmen erreicht — stoppe.", cap)
-            break
+    lock = threading.Lock()  # schützt Metriken, kept, seen_domains (Thread-Pool)
+
+    def process_business(b: Business) -> None:
+        with lock:
+            if cap and m.processed >= cap:
+                return
 
         # 3a) Website ggf. auflösen: zuerst Verzeichnis-Detailseite, dann optional DDG
         origin = "Quelle"
         if not b.website:
             if not resolve_missing:
-                continue
+                return
             site = None
             if b.detail_url:
                 try:
@@ -178,53 +183,57 @@ def run(
                     if site:
                         origin = "Detailseite"
                 except Exception:
-                    m.errors += 1
+                    with lock:
+                        m.errors += 1
             if not site and use_ddg:
                 try:
                     site = resolve_website(client, b.name, b.city, b.postcode)
                     if site:
                         origin = "Suche"
                 except Exception:
-                    m.errors += 1
+                    with lock:
+                        m.errors += 1
             if site:
                 b.website = site
-                m.website_resolved += 1
             else:
-                m.without_website += 1
+                with lock:
+                    m.without_website += 1
                 log.info("  [—]    %-42s | keine Website gefunden → übersprungen", _short(b.name))
-                continue
+                return
 
-        # Laufzeit-Dedupe nach Domain: Filialen/Mehrfacheinträge führen oft auf
-        # dieselbe Website (z. B. peterpolzer.de). Erst nach der Auflösung erkennbar.
+        # Laufzeit-Dedupe nach Domain + Cap + Zähler atomar
         dom = normalize_domain(b.website)
-        if dom and dom in seen_domains:
-            m.domain_dupes += 1
-            log.info("  [—]    %-42s | Duplikat (Domain %s) → übersprungen", _short(b.name), dom)
-            continue
-        if dom:
-            seen_domains.add(dom)
+        with lock:
+            if cap and m.processed >= cap:
+                return
+            if dom and dom in seen_domains:
+                m.domain_dupes += 1
+                log.info("  [—]    %-42s | Duplikat (Domain %s) → übersprungen", _short(b.name), dom)
+                return
+            if dom:
+                seen_domains.add(dom)
+            if origin != "Quelle":
+                m.website_resolved += 1
+            m.processed += 1
+            n = m.processed
 
-        n = m.processed + 1
-        m.processed += 1
-        log.info("  [%2d/%s] %-42s | %s | Website (%s): %s",
-                 n, cap or "∞", _short(b.name), "/".join(b.categories) or "?", origin, b.website)
+        lines = [f"  [{n:>4}/{cap or '∞'}] {_short(b.name)} | {'/'.join(b.categories) or '?'} | Website ({origin}): {b.website}"]
 
         # 4) Homepage + Impressum
         try:
             impressum_url, home = imp.find_impressum_url(client, b.website)
-        except Exception as e:
-            m.errors += 1
+        except Exception:
             home, impressum_url = None, None
-            log.debug("      Fehler beim Homepage-Abruf: %s", e)
-
         if not home or not home.ok or not home.text:
             b.website_status = "dead"
-            m.website_dead += 1
-            status = home.status if home else "—"
-            log.info("      Homepage nicht erreichbar (Status %s) → übersprungen", status)
-            continue
+            with lock:
+                m.website_dead += 1
+            lines.append(f"        Homepage nicht erreichbar (Status {home.status if home else '—'}) → übersprungen")
+            log.info("\n".join(lines))
+            return
         b.website_status = "ok"
-        m.website_ok += 1
+        with lock:
+            m.website_ok += 1
 
         # Instagram-Handle aus der Homepage (für spätere Werbe-Kanäle)
         if not b.instagram:
@@ -242,48 +251,87 @@ def run(
                 ir = client.get(impressum_url)
                 if ir.ok and ir.text:
                     b.impressum_url = impressum_url
-                    m.impressum_found += 1
+                    with lock:
+                        m.impressum_found += 1
                     fields = imp.extract_fields(ir.text)
                     impressum_text = BeautifulSoup(ir.text, "lxml").get_text("\n", strip=True)
                     for k, v in fields.items():
                         if v and not getattr(b, k, None):
                             setattr(b, k, v)
-                    log.info("      Impressum: %s", impressum_url)
+                    lines.append(f"        Impressum: {impressum_url}")
             except Exception:
-                m.errors += 1
+                with lock:
+                    m.errors += 1
         if not b.impressum_url:
-            log.info("      Impressum: nicht gefunden")
-        log.info("      Felder → E-Mail=%s  Inhaber=%s  Fax=%s  USt=%s  Adresse=%s",
-                 _yn(b.email), _short(b.owner or "—", 24), _yn(b.fax), _yn(b.vat_id), _yn(b.impressum_address))
+            lines.append("        Impressum: nicht gefunden")
+        lines.append(f"        Felder → E-Mail={_yn(b.email)}  Inhaber={_short(b.owner or '—', 24)}  Tel={_yn(b.phone)}  USt={_yn(b.vat_id)}  Adresse={_yn(b.impressum_address)}")
 
         # 6) Größenschätzung
         try:
             size = sizing.estimate_size(client, b.name, b.website, home.text, impressum_text, b.owner)
             b.size_estimate, b.size_confidence, b.size_basis = size["estimate"], size["confidence"], size["basis"]
         except Exception:
-            m.errors += 1
+            with lock:
+                m.errors += 1
             b.size_estimate, b.size_confidence, b.size_basis = "unbekannt", "niedrig", "Schätzung fehlgeschlagen"
-        log.info("      Größe: %s (Konfidenz %s) — %s", b.size_estimate, b.size_confidence, b.size_basis)
+        lines.append(f"        Größe: {b.size_estimate} (Konfidenz {b.size_confidence}) — {b.size_basis}")
 
-        if b.email:
-            m.filled_email += 1
-        if b.owner:
-            m.filled_owner += 1
-        if b.fax:
-            m.filled_fax += 1
-        if b.vat_id:
-            m.filled_vat += 1
-        if b.impressum_address:
-            m.filled_address += 1
-        m.size_dist[b.size_estimate] = m.size_dist.get(b.size_estimate, 0) + 1
+        # 7) Felder zählen + Filter (Größe/Konfidenz) atomar
+        with lock:
+            if b.email:
+                m.filled_email += 1
+            if b.owner:
+                m.filled_owner += 1
+            if b.fax:
+                m.filled_fax += 1
+            if b.vat_id:
+                m.filled_vat += 1
+            if b.impressum_address:
+                m.filled_address += 1
+            m.size_dist[b.size_estimate] = m.size_dist.get(b.size_estimate, 0) + 1
+            passes = b.size_estimate in keep_sizes and b.size_confidence in keep_confidences
+            if passes:
+                kept.append(b)
+            else:
+                m.dropped_size += 1
+        lines.append("        → BEHALTEN" if passes
+                     else f"        → VERWORFEN (Größe={b.size_estimate}, Konfidenz={b.size_confidence})")
+        log.info("\n".join(lines))
 
-        # 7) Filter nach Größe + Konfidenz (konfigurierbar; Standard: >=3 & mittel/hoch)
-        if b.size_estimate not in keep_sizes or b.size_confidence not in keep_confidences:
-            m.dropped_size += 1
-            log.info("      → VERWORFEN (Größe=%s, Konfidenz=%s nicht in Auswahl)", b.size_estimate, b.size_confidence)
-            continue
-        kept.append(b)
-        log.info("      → BEHALTEN")
+    # Ausführung: sequentiell (workers<=1) oder parallel mit pro-Host-Drosselung
+    if workers and workers > 1:
+        it = iter(ordered)
+        inflight: set = set()
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            for _ in range(workers):
+                try:
+                    inflight.add(ex.submit(process_business, next(it)))
+                except StopIteration:
+                    break
+            while inflight:
+                done, inflight = wait(inflight, return_when=FIRST_COMPLETED)
+                for fut in done:
+                    try:
+                        fut.result()
+                    except Exception:
+                        with lock:
+                            m.errors += 1
+                with lock:
+                    reached = bool(cap and m.processed >= cap)
+                if not reached:
+                    for _ in range(len(done)):
+                        try:
+                            inflight.add(ex.submit(process_business, next(it)))
+                        except StopIteration:
+                            break
+        if cap and m.processed >= cap:
+            log.info("  Limit von %d verarbeiteten Firmen erreicht.", cap)
+    else:
+        for b in ordered:
+            if cap and m.processed >= cap:
+                log.info("  Limit von %d verarbeiteten Firmen erreicht — stoppe.", cap)
+                break
+            process_business(b)
 
     # 8) OUTPUT
     out = Path(out_path)

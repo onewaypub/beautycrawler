@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import time
 import urllib.robotparser
 from dataclasses import dataclass
@@ -45,6 +46,9 @@ class HttpClient:
     ):
         self.user_agent = user_agent
         self.timeout = timeout
+        # Kurzer Connect-Timeout: tote Sites scheitern schnell und blockieren keinen
+        # Worker bis zum vollen (Read-)Timeout. Read-Timeout bleibt großzügig.
+        self.connect_timeout = min(7.0, timeout)
         self.max_retries = max_retries
         self.default_delay = default_delay
         self.respect_robots = respect_robots
@@ -56,6 +60,18 @@ class HttpClient:
         self._last_host_access: dict[str, float] = {}
         self._robots: dict[str, urllib.robotparser.RobotFileParser | None] = {}
         self._crawl_delay: dict[str, float] = {}
+        # Pro-Host-Lock: gleicher Host bleibt seriell (höflich), verschiedene
+        # Hosts laufen parallel. Ermöglicht den Thread-Pool in der Pipeline.
+        self._global_lock = threading.Lock()
+        self._host_locks: dict[str, threading.Lock] = {}
+
+    def _host_lock(self, host: str) -> threading.Lock:
+        with self._global_lock:
+            lk = self._host_locks.get(host)
+            if lk is None:
+                lk = threading.Lock()
+                self._host_locks[host] = lk
+            return lk
 
     # ---- Cache ---------------------------------------------------------------
     def _cache_path(self, key: str) -> Path:
@@ -143,43 +159,46 @@ class HttpClient:
                 return cached
 
         check_robots = self.respect_robots if respect_robots is None else respect_robots
-        if check_robots and not self.allowed(url):
-            return Response(url, 0, "", ok=False, error="robots_disallow")
-
         host = urlparse(url).netloc
-        last_err = None
-        for attempt in range(self.max_retries + 1):
-            self._throttle(host)
-            try:
+
+        # Pro-Host serialisieren -> höfliches Rate-Limit auch unter Threads.
+        with self._host_lock(host):
+            if check_robots and not self.allowed(url):
+                return Response(url, 0, "", ok=False, error="robots_disallow")
+
+            last_err = None
+            for attempt in range(self.max_retries + 1):
+                self._throttle(host)
                 try:
-                    r = self.session.request(
-                        method, url, data=data, headers=headers,
-                        timeout=self.timeout, allow_redirects=True,
-                    )
-                except requests.exceptions.SSLError:
-                    # kaputtes Zertifikat -> einmal ohne Verifikation versuchen
-                    r = self.session.request(
-                        method, url, data=data, headers=headers,
-                        timeout=self.timeout, allow_redirects=True, verify=False,
-                    )
-                # Encoding: wenn der Server keinen charset-Header schickt, setzt
-                # requests fälschlich ISO-8859-1 -> Umlaute kaputt. Dann erraten.
-                ctype = r.headers.get("content-type", "").lower()
-                if "charset=" not in ctype:
-                    enc = r.apparent_encoding
-                    if enc:
-                        r.encoding = enc
-                ok = 200 <= r.status_code < 300
-                resp = Response(str(r.url), r.status_code, r.text, ok)
-                if ok and use_cache:
-                    self._cache_write(cache_key, resp)
-                if r.status_code in (429, 500, 502, 503, 504) and attempt < self.max_retries:
-                    time.sleep(1.5 * (attempt + 1))
-                    continue
-                return resp
-            except requests.RequestException as e:
-                last_err = str(e)
-                if attempt < self.max_retries:
-                    time.sleep(1.0 * (attempt + 1))
-                    continue
-        return Response(url, 0, "", ok=False, error=last_err or "request_failed")
+                    try:
+                        r = self.session.request(
+                            method, url, data=data, headers=headers,
+                            timeout=(self.connect_timeout, self.timeout), allow_redirects=True,
+                        )
+                    except requests.exceptions.SSLError:
+                        # kaputtes Zertifikat -> einmal ohne Verifikation versuchen
+                        r = self.session.request(
+                            method, url, data=data, headers=headers,
+                            timeout=(self.connect_timeout, self.timeout), allow_redirects=True, verify=False,
+                        )
+                    # Encoding: wenn der Server keinen charset-Header schickt, setzt
+                    # requests fälschlich ISO-8859-1 -> Umlaute kaputt. Dann erraten.
+                    ctype = r.headers.get("content-type", "").lower()
+                    if "charset=" not in ctype:
+                        enc = r.apparent_encoding
+                        if enc:
+                            r.encoding = enc
+                    ok = 200 <= r.status_code < 300
+                    resp = Response(str(r.url), r.status_code, r.text, ok)
+                    if ok and use_cache:
+                        self._cache_write(cache_key, resp)
+                    if r.status_code in (429, 500, 502, 503, 504) and attempt < self.max_retries:
+                        time.sleep(1.5 * (attempt + 1))
+                        continue
+                    return resp
+                except requests.RequestException as e:
+                    last_err = str(e)
+                    if attempt < self.max_retries:
+                        time.sleep(1.0 * (attempt + 1))
+                        continue
+            return Response(url, 0, "", ok=False, error=last_err or "request_failed")
