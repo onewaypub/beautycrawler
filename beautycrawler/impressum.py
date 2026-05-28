@@ -28,10 +28,16 @@ _NAME = (
 # Owner-Muster in Prioritätsreihenfolge. \b verhindert Treffer mitten im Wort;
 # der Name muss direkt (max. kurze Zwischenfloskel) hinter dem Label stehen.
 _OWNER_PATTERNS = [
-    re.compile(rf"\b(?:Gesch[äa]ftsf[üu]hrer(?:in)?|Inhaber(?:in)?)\b\s*[:\-]?\s*(?:ist\s+|Herrn?\s+|Frau\s+)?({_NAME})", re.IGNORECASE),
+    # Label vor dem Namen
+    re.compile(rf"\b(?:Gesch[äa]ftsf[üu]hrer(?:in)?|Inhaber(?:in)?|Inh\.)\b\s*[:\-]?\s*(?:ist\s+|Herrn?\s+|Frau\s+)?({_NAME})", re.IGNORECASE),
     re.compile(rf"\bvertreten durch\b\s*(?:den|die|Herrn?|Frau|Gesch[äa]ftsf[üu]hrer(?:in)?)?\s*[:\-]?\s*({_NAME})", re.IGNORECASE),
     re.compile(rf"\bVertretungsberechtigte[rs]?\b[^:\n]{{0,25}}[:\-]\s*({_NAME})", re.IGNORECASE),
-    re.compile(rf"\bVerantwortlich(?:e[rs])?\s+f[üu]r\s+den\s+Inhalt[^:\n]{{0,50}}[:\-]\s*({_NAME})", re.IGNORECASE),
+    # Name vor dem Label, z. B. "Max Mustermann (Inhaber)" / "… - Inhaberin"
+    # Klammer/Bindestrich PFLICHT, sonst würde "Salon Schmidt Inhaber" falsch greifen.
+    re.compile(rf"({_NAME})\s*[\(\-–]\s*(?:Inhaber(?:in)?|Gesch[äa]ftsf[üu]hrer(?:in)?)\b", re.IGNORECASE),
+    # Verantwortlich i.S.d. § 18 MStV / § 55 RStV (häufig der Inhaber bei Kleinbetrieben)
+    re.compile(rf"§\s*(?:18|55)[^:\n]{{0,45}}(?:MStV|RStV)[^:\n]{{0,45}}[:\-]?\s*({_NAME})", re.IGNORECASE),
+    re.compile(rf"\bVerantwortlich(?:e[rs])?\s+f[üu]r\s+den\s+Inhalt[^:\n]{{0,50}}[:\-]?\s*({_NAME})", re.IGNORECASE),
 ]
 
 _EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
@@ -84,6 +90,14 @@ def _deobfuscate_email(text: str) -> str:
 def find_impressum_url(client: HttpClient, homepage_url: str) -> tuple[str | None, Response | None]:
     """Liefert (impressum_url | None, homepage_response). homepage_response für Status/Reuse."""
     home = client.get(homepage_url)
+    if not home.ok or not home.text:
+        # Bei tiefem Pfad die Root-Domain probieren (Quellen verlinken oft Unterseiten).
+        parsed = urlparse(homepage_url)
+        if parsed.path not in ("", "/") or parsed.query:
+            root = f"{parsed.scheme}://{parsed.netloc}/"
+            alt = client.get(root)
+            if alt.ok and alt.text:
+                home, homepage_url = alt, root
     if not home.ok or not home.text:
         return None, home
 

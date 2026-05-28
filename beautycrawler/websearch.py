@@ -29,7 +29,12 @@ BLOCKLIST = {
     "wirfindendeinenjob.de", "cleverb2b.de", "postleitzahlen.de", "bundesnetzagentur.de",
     "powerappsportals.com", "ekomi.de", "localytix.de", "microsoft.com", "bing.com",
     "apple.com", "whatsapp.com", "t.me", "wa.me", "goo.gl", "bit.ly",
+    "demapscompany.org",
 }
+
+# Substrings, die auf Aggregatoren/Buchungsplattformen hindeuten (auch Subdomains
+# wie linie2friseur.mytreatwell.de). Deren Seiten haben kein eigenes Impressum.
+_BLOCK_SUBSTRINGS = ("11880", "treatwell", "planity", "booksy", "salonkee", "phorest", "shore.de")
 
 
 def _registrable(host: str) -> str:
@@ -43,6 +48,8 @@ def _is_blocked(host: str) -> bool:
     host = _registrable(host)
     if not host or "." not in host:
         return True
+    if any(sub in host for sub in _BLOCK_SUBSTRINGS):
+        return True
     return any(host == b or host.endswith("." + b) for b in BLOCKLIST)
 
 
@@ -52,20 +59,17 @@ _WEBSITE_LABELS = ("zur webseite", "zur website", "webseite", "website", "homepa
 def website_from_detail_page(client: HttpClient, detail_url: str) -> str | None:
     """Echte Firmen-Website aus einer Verzeichnis-Detailseite (z. B. 11880) extrahieren.
 
-    Zuerst ein als 'Website/Webseite' beschrifteter Link; sonst die am häufigsten
-    verlinkte externe Nicht-Aggregator-Domain.
+    NUR über einen als 'Website/Webseite' beschrifteten Link. Ein Raten über die
+    'häufigste Domain' wurde verworfen, weil es Müll/Aggregator-Domains lieferte
+    (z. B. demapscompany.org, 11880-beauty.com). Lieber keine als eine falsche Website.
     """
     resp = client.get(detail_url)
     if not resp.ok or not resp.text:
         return None
 
-    from collections import Counter
-
     from bs4 import BeautifulSoup
 
     soup = BeautifulSoup(resp.text, "lxml")
-
-    # 1) beschrifteter Website-Link
     for a in soup.find_all("a", href=True):
         href = a["href"].strip()
         if not href.startswith("http"):
@@ -76,19 +80,6 @@ def website_from_detail_page(client: HttpClient, detail_url: str) -> str | None:
         text = a.get_text(" ", strip=True).lower()
         if any(lbl in text for lbl in _WEBSITE_LABELS):
             return f"https://{_registrable(host)}/"
-
-    # 2) häufigste externe Domain als Fallback
-    counts: Counter = Counter()
-    for a in soup.find_all("a", href=True):
-        href = a["href"].strip()
-        if not href.startswith("http"):
-            continue
-        host = _registrable(urlparse(href).netloc)
-        if _is_blocked(host):
-            continue
-        counts[host] += 1
-    if counts:
-        return f"https://{counts.most_common(1)[0][0]}/"
     return None
 
 

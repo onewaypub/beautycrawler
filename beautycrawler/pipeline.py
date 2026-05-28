@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 from . import impressum as imp
 from . import sizing
 from .http_client import HttpClient
-from .models import CSV_FIELDS, Business
+from .models import CSV_FIELDS, Business, normalize_domain
 from .sources.base import Area, Source
 from .websearch import resolve_website, website_from_detail_page
 
@@ -24,6 +24,7 @@ class Metrics:
     per_source: dict = field(default_factory=dict)
     after_dedupe: int = 0
     duplicates: int = 0
+    domain_dupes: int = 0
     with_website_source: int = 0
     website_resolved: int = 0
     without_website: int = 0
@@ -54,6 +55,7 @@ class Metrics:
         lines += [
             f"Nach Dedupe: {self.after_dedupe} ({self.duplicates} Duplikate zusammengeführt)",
             f"Website aus Quelle: {self.with_website_source} | per Suche aufgelöst: {self.website_resolved} | ohne Website (verworfen): {self.without_website}",
+            f"Domain-Duplikate nach Auflösung übersprungen: {self.domain_dupes}",
             f"Verarbeitet (Homepage abgerufen): {self.processed}",
             f"   Website erreichbar: {self.website_ok} | tot/blockiert: {self.website_dead}",
             f"   Impressum gefunden: {self.impressum_found} ({pct(self.impressum_found, self.website_ok)} der erreichbaren)",
@@ -81,6 +83,23 @@ def _dedupe(businesses: list[Business]) -> list[Business]:
         else:
             merged[key] = b
     return list(merged.values())
+
+
+def _interleave(businesses: list[Business]) -> list[Business]:
+    """Round-Robin über die Quellen, damit das Limit eine ausgewogene
+    Quellen-Mischung in der Ausgabe ergibt (statt nur die erste Quelle)."""
+    from collections import defaultdict
+
+    groups: dict[str, list[Business]] = defaultdict(list)
+    for b in businesses:
+        groups[b.sources[0] if b.sources else "?"].append(b)
+    lists = list(groups.values())
+    out: list[Business] = []
+    while any(lists):
+        for lst in lists:
+            if lst:
+                out.append(lst.pop(0))
+    return out
 
 
 def _short(s: str, n: int = 42) -> str:
@@ -128,15 +147,16 @@ def run(
     m.duplicates = m.discovered_total - m.after_dedupe
     log.info("─── SCHRITT 2: DEDUPE: %d → %d (%d Duplikate) ───", m.discovered_total, m.after_dedupe, m.duplicates)
 
-    # 3) Reihenfolge: Einträge mit Website zuerst, dann die ohne (lazy aufgelöst).
+    # 3) Reihenfolge: Round-Robin über Quellen -> ausgewogene Quellen-Mischung.
     m.with_website_source = sum(1 for b in deduped if b.website)
-    ordered = [b for b in deduped if b.website] + [b for b in deduped if not b.website]
+    ordered = _interleave(deduped)
     log.info(
-        "─── SCHRITT 3-7: VERARBEITUNG (max %s Firmen; %d mit Website, %d ohne) ───",
+        "─── SCHRITT 3-7: VERARBEITUNG (max %s Firmen; %d mit Website direkt, %d brauchen Auflösung) ───",
         cap or "∞", m.with_website_source, m.after_dedupe - m.with_website_source,
     )
 
     kept: list[Business] = []
+    seen_domains: set[str] = set()
     for b in ordered:
         if cap and m.processed >= cap:
             log.info("  Limit von %d verarbeiteten Firmen erreicht — stoppe.", cap)
@@ -169,6 +189,16 @@ def run(
                 m.without_website += 1
                 log.info("  [—]    %-42s | keine Website gefunden → übersprungen", _short(b.name))
                 continue
+
+        # Laufzeit-Dedupe nach Domain: Filialen/Mehrfacheinträge führen oft auf
+        # dieselbe Website (z. B. peterpolzer.de). Erst nach der Auflösung erkennbar.
+        dom = normalize_domain(b.website)
+        if dom and dom in seen_domains:
+            m.domain_dupes += 1
+            log.info("  [—]    %-42s | Duplikat (Domain %s) → übersprungen", _short(b.name), dom)
+            continue
+        if dom:
+            seen_domains.add(dom)
 
         n = m.processed + 1
         m.processed += 1
