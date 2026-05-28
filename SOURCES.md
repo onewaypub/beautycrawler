@@ -17,7 +17,7 @@ Rate-Limits, Caching) ist Standard.
 | Das Örtliche (dasoertliche.de) | **aktiv** | `Disallow:` leer = alles erlaubt | Listing-JSON-LD (/Themen/<Branche>/<Stadt>.html); Website via Detailseite |
 | GoYellow (goyellow.de) | **aktiv** | `/suche/` erlaubt (außer Filter-Params) | Listing als Microdata (LocalBusiness); Website via Detailseite |
 | meinestadt.de | geplant | großteils erlaubt | |
-| stadtbranchenbuch.com | geplant | `/search` gesperrt → Kategorie-/Detailseiten nutzen | |
+| stadtbranchenbuch.com | **aktiv** | `/search` gesperrt, Kategorieseiten erlaubt | City-Subdomains; **Website direkt inline** im Listing; Name/Adresse via JSON-LD |
 
 ## Via Sitemaps (gut für deutschlandweit)
 | Quelle | Status | Hinweis |

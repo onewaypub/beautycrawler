@@ -46,7 +46,7 @@ def _looks_like_url(text: str) -> bool:
 
 # Substrings, die auf Aggregatoren/Buchungsplattformen hindeuten (auch Subdomains
 # wie linie2friseur.mytreatwell.de). Deren Seiten haben kein eigenes Impressum.
-_BLOCK_SUBSTRINGS = ("11880", "treatwell", "planity", "booksy", "salonkee", "phorest", "shore.de")
+_BLOCK_SUBSTRINGS = ("11880", "treatwell", "planity", "booksy", "salonkee", "phorest", "shore.de", "opendi")
 
 
 def _registrable(host: str) -> str:

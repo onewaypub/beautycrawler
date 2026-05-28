@@ -42,7 +42,8 @@ def main(argv=None):
     p = argparse.ArgumentParser(description="Beauty/Salon-B2B-Crawler (DE)")
     p.add_argument("--city", default="hamburg-mitte", help="Stadt-Schlüssel aus AREAS oder beliebiger Name (mit --bbox)")
     p.add_argument("--bbox", help="Bounding-Box 'sued,west,nord,ost' (überschreibt --city-bbox)")
-    p.add_argument("--sources", default="osm,11880,dasoertliche,goyellow", help="Komma-Liste: osm,11880,dasoertliche,goyellow")
+    p.add_argument("--sources", default="osm,11880,dasoertliche,goyellow,stadtbranchenbuch",
+                   help="Komma-Liste: osm,11880,dasoertliche,goyellow,stadtbranchenbuch")
     p.add_argument("--limit", type=int, default=25, help="Max. Firmen für die teuren Schritte (0 = unbegrenzt)")
     p.add_argument("--min-size", type=int, default=3, help="Mindest-Personenzahl (Filter)")
     p.add_argument("--no-resolve", action="store_true", help="Website-Auflösung (Detailseite) deaktivieren")
