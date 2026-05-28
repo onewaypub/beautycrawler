@@ -42,6 +42,12 @@ _OWNER_PATTERNS = [
 
 _EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 _FAX = re.compile(r"(?:Fax|Telefax)[^\d+]{0,12}([+()\d][\d\s/().\-]{5,})", re.IGNORECASE)
+# Telefon, aber NICHT 'Telefax' (Negative-Lookahead nach 'Tel')
+_PHONE = re.compile(
+    r"(?:\bTelefon\b|\bTel\.?(?![A-Za-z])|\bTel:|\bFon\b|\bMobil\b|\bHandy\b)"
+    r"[^\d+]{0,12}([+(0][\d\s/().\-]{6,})",
+    re.IGNORECASE,
+)
 _VAT = re.compile(r"\bDE\s?\d{9}\b")
 _PLZ_CITY_LINE = re.compile(r"^\s*(?:D[-\s])?(\d{5})\s+([A-ZÄÖÜ][A-Za-zäöüß.\-/ ]{2,40})\s*$")
 _PLZ_CITY_INLINE = re.compile(r"\b(?:D[-\s])?(\d{5})\s+([A-ZÄÖÜ][A-Za-zäöüß.\-]{2,40})")
@@ -159,6 +165,11 @@ def extract_fields(html: str) -> dict:
     if mf:
         fax = re.sub(r"\s+", " ", mf.group(1)).strip(" .,-")
 
+    phone = None
+    mph = _PHONE.search(text)
+    if mph:
+        phone = re.sub(r"\s+", " ", mph.group(1)).strip(" .,-")
+
     vat = None
     mv = _VAT.search(text)
     if mv:
@@ -166,4 +177,4 @@ def extract_fields(html: str) -> dict:
 
     address = _extract_address(text)
 
-    return {"owner": owner, "email": email, "fax": fax, "vat_id": vat, "impressum_address": address}
+    return {"owner": owner, "email": email, "phone": phone, "fax": fax, "vat_id": vat, "impressum_address": address}

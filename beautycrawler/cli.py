@@ -45,7 +45,10 @@ def main(argv=None):
     p.add_argument("--sources", default="osm,11880,dasoertliche,goyellow,stadtbranchenbuch,overture",
                    help="Komma-Liste: osm,11880,dasoertliche,goyellow,stadtbranchenbuch,overture")
     p.add_argument("--limit", type=int, default=25, help="Max. Firmen für die teuren Schritte (0 = unbegrenzt)")
-    p.add_argument("--min-size", type=int, default=3, help="Mindest-Personenzahl (Filter)")
+    p.add_argument("--sizes", default="3-5,6-10,11+",
+                   help="Zu behaltende Größen-Buckets (Komma). Standard ohne 'unbekannt' und '1-2'.")
+    p.add_argument("--min-confidence", default="mittel", choices=["niedrig", "mittel", "hoch"],
+                   help="Mindest-Konfidenz der Größenschätzung (Standard: mittel = niedrig wird verworfen)")
     p.add_argument("--no-resolve", action="store_true", help="Website-Auflösung (Detailseite) deaktivieren")
     p.add_argument("--use-ddg", action="store_true", help="DuckDuckGo-Websuche als Fallback (langsam, kann blockiert werden)")
     p.add_argument("--out", default="output/salons.csv", help="CSV-Ausgabepfad")
@@ -82,10 +85,20 @@ def main(argv=None):
     logger.info("  CSV-Ausgabe: %s", args.out)
     logger.info("=" * 60)
 
+    keep_sizes = {s.strip() for s in args.sizes.split(",") if s.strip()}
+    _conf_levels = {
+        "niedrig": {"niedrig", "mittel", "hoch"},
+        "mittel": {"mittel", "hoch"},
+        "hoch": {"hoch"},
+    }
+    keep_confidences = _conf_levels[args.min_confidence]
+    logger.info("  Filter: Größen=%s  Mindest-Konfidenz=%s", sorted(keep_sizes), args.min_confidence)
+
     metrics = run(
         sources, area, client,
         limit=(args.limit or None),
-        min_size=args.min_size,
+        keep_sizes=keep_sizes,
+        keep_confidences=keep_confidences,
         resolve_missing=not args.no_resolve,
         use_ddg=args.use_ddg,
         out_path=args.out,

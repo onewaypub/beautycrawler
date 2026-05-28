@@ -38,7 +38,7 @@ class Metrics:
     filled_vat: int = 0
     filled_address: int = 0
     size_dist: dict = field(default_factory=dict)
-    dropped_small: int = 0
+    dropped_size: int = 0
     final_count: int = 0
     errors: int = 0
 
@@ -65,8 +65,8 @@ class Metrics:
             f"   Adresse:  {self.filled_address} ({pct(self.filled_address, self.website_ok)})",
             f"   USt-IdNr: {self.filled_vat} ({pct(self.filled_vat, self.website_ok)})",
             f"   Fax:      {self.filled_fax} ({pct(self.filled_fax, self.website_ok)})",
-            f"Größenverteilung: {dict(self.size_dist)}",
-            f"Verworfen (<3 Personen geschätzt): {self.dropped_small}",
+            f"Größenverteilung (vor Filter): {dict(self.size_dist)}",
+            f"Verworfen (Größe/Konfidenz-Filter): {self.dropped_size}",
             f"Fehler: {self.errors}",
             f">>> FINALE DATENSÄTZE: {self.final_count} <<<",
             "==========================================",
@@ -117,13 +117,17 @@ def run(
     client: HttpClient,
     *,
     limit: int | None = None,
-    min_size: int = 3,
+    keep_sizes: set[str] | None = None,
+    keep_confidences: set[str] | None = None,
     resolve_missing: bool = True,
     use_ddg: bool = False,
     out_path: str = "output/salons.csv",
 ) -> Metrics:
     m = Metrics()
     cap = limit or 0
+    # Standard: nur belastbare Mehrpersonen-Betriebe (>=3) behalten.
+    keep_sizes = keep_sizes if keep_sizes is not None else {"3-5", "6-10", "11+"}
+    keep_confidences = keep_confidences if keep_confidences is not None else {"mittel", "hoch"}
 
     # 1) DISCOVERY
     log.info("─── SCHRITT 1: DISCOVERY (Gebiet: %s) ───", area.name)
@@ -264,11 +268,10 @@ def run(
             m.filled_address += 1
         m.size_dist[b.size_estimate] = m.size_dist.get(b.size_estimate, 0) + 1
 
-        # 7) Größenfilter (<3): nur verwerfen, wenn 1-2 MIT ausreichender Konfidenz
-        #    (unsichere 1-2 behalten wir, um valide Leads nicht zu verlieren).
-        if b.size_estimate == "1-2" and b.size_confidence in ("mittel", "hoch"):
-            m.dropped_small += 1
-            log.info("      → VERWORFEN (geschätzt <3 Personen, Konfidenz %s)", b.size_confidence)
+        # 7) Filter nach Größe + Konfidenz (konfigurierbar; Standard: >=3 & mittel/hoch)
+        if b.size_estimate not in keep_sizes or b.size_confidence not in keep_confidences:
+            m.dropped_size += 1
+            log.info("      → VERWORFEN (Größe=%s, Konfidenz=%s nicht in Auswahl)", b.size_estimate, b.size_confidence)
             continue
         kept.append(b)
         log.info("      → BEHALTEN")
