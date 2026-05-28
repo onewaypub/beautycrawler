@@ -41,11 +41,12 @@ _OWNER_PATTERNS = [
 ]
 
 _EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
-_FAX = re.compile(r"(?:Fax|Telefax)[^\d+]{0,12}([+()\d][\d\s/().\-]{5,})", re.IGNORECASE)
-# Telefon, aber NICHT 'Telefax' (Negative-Lookahead nach 'Tel')
+_FAX = re.compile(r"(?:Fax|Telefax)[^\d+(]{0,12}([+(\d][\d\s/().\-]{5,})", re.IGNORECASE)
+# Telefon, aber NICHT 'Telefax' (Negative-Lookahead nach 'Tel').
+# [^\d+(] im Trenner, damit eine führende '(' der Vorwahl nicht verschluckt wird.
 _PHONE = re.compile(
     r"(?:\bTelefon\b|\bTel\.?(?![A-Za-z])|\bTel:|\bFon\b|\bMobil\b|\bHandy\b)"
-    r"[^\d+]{0,12}([+(0][\d\s/().\-]{6,})",
+    r"[^\d+(]{0,12}([+(0][\d\s/().\-]{6,})",
     re.IGNORECASE,
 )
 _VAT = re.compile(r"\bDE\s?\d{9}\b")
