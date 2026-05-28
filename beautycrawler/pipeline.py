@@ -264,10 +264,11 @@ def run(
             m.filled_address += 1
         m.size_dist[b.size_estimate] = m.size_dist.get(b.size_estimate, 0) + 1
 
-        # 7) Größenfilter (<3): nur verwerfen, wenn klar 1-2
-        if b.size_estimate == "1-2":
+        # 7) Größenfilter (<3): nur verwerfen, wenn 1-2 MIT ausreichender Konfidenz
+        #    (unsichere 1-2 behalten wir, um valide Leads nicht zu verlieren).
+        if b.size_estimate == "1-2" and b.size_confidence in ("mittel", "hoch"):
             m.dropped_small += 1
-            log.info("      → VERWORFEN (geschätzt <3 Personen)")
+            log.info("      → VERWORFEN (geschätzt <3 Personen, Konfidenz %s)", b.size_confidence)
             continue
         kept.append(b)
         log.info("      → BEHALTEN")
