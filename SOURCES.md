@@ -16,13 +16,13 @@ Rate-Limits, Caching) ist Standard.
 | 11880.com | **aktiv** | erlaubt (Suche frei) | Listing als JSON-LD (50/Seite); eigene Website per Suche aufgelöst |
 | Das Örtliche (dasoertliche.de) | **aktiv** | `Disallow:` leer = alles erlaubt | Listing-JSON-LD (/Themen/<Branche>/<Stadt>.html); Website via Detailseite |
 | GoYellow (goyellow.de) | **aktiv** | `/suche/` erlaubt (außer Filter-Params) | Listing als Microdata (LocalBusiness); Website via Detailseite |
-| meinestadt.de | geplant | großteils erlaubt | |
+| meinestadt.de | verworfen | robots ok, aber Server blockt Bot-UA (HTTP 403) | nur mit Browser-UA scrapebar → aus Fairness verworfen |
 | stadtbranchenbuch.com | **aktiv** | `/search` gesperrt, Kategorieseiten erlaubt | City-Subdomains; **Website direkt inline** im Listing; Name/Adresse via JSON-LD |
 
 ## Via Sitemaps (gut für deutschlandweit)
 | Quelle | Status | Hinweis |
 |---|---|---|
-| Gelbe Seiten | geplant | `/suche` gesperrt, aber Detailseiten-Sitemaps erlaubt |
+| Gelbe Seiten | zurückgestellt | Sitemaps orts-orientiert (Bundesland/Landkreis), NICHT branchen-filterbar → nur per Massen-Crawl |
 | branchenbuchdeutschland.de | geplant | Sitemaps pro Bundesland (sitemap_by.xml = Bayern …) |
 
 ## Buchungsplattformen (eigene Website meist NICHT verlinkt → Auflösung nötig)
