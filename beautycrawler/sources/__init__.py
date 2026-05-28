@@ -4,6 +4,7 @@ from .dasoertliche import DasOertlicheSource
 from .de11880 import Elf880Source
 from .goyellow import GoYellowSource
 from .osm import OsmSource
+from .overture import OvertureSource
 from .stadtbranchenbuch import StadtbranchenbuchSource
 
 # Registry: Name -> Quellen-Klasse. Inkrementell erweiterbar.
@@ -13,9 +14,10 @@ REGISTRY: dict[str, type[Source]] = {
     DasOertlicheSource.name: DasOertlicheSource,
     GoYellowSource.name: GoYellowSource,
     StadtbranchenbuchSource.name: StadtbranchenbuchSource,
+    OvertureSource.name: OvertureSource,
 }
 
 __all__ = [
     "Area", "Source", "OsmSource", "Elf880Source", "DasOertlicheSource",
-    "GoYellowSource", "StadtbranchenbuchSource", "REGISTRY",
+    "GoYellowSource", "StadtbranchenbuchSource", "OvertureSource", "REGISTRY",
 ]

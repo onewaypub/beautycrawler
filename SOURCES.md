@@ -34,7 +34,7 @@ Rate-Limits, Caching) ist Standard.
 ## Open-Data-Datensätze (license-clean, hohe Abdeckung, für Skalierung)
 | Quelle | Status | Hinweis |
 |---|---|---|
-| Overture Maps Places | geplant | offen; per DuckDB auf Remote-Parquet mit bbox/Kategorie filtern |
+| Overture Maps Places | **aktiv** | offen; per DuckDB anonym auf S3-Parquet, bbox+Kategorie-Filter; ~80% mit Website |
 | Foursquare OS Places | geplant | offener Places-Datensatz mit Website/Kategorie |
 
 ## Anreicherung

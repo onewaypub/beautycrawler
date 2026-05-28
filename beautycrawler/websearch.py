@@ -32,6 +32,9 @@ BLOCKLIST = {
     "demapscompany.org",
     # Rauschen auf Das-Örtliche-Detailseiten
     "dtme.de", "tvg-verlag.de", "bahn.de", "kennstdueinen.de", "consentmanager.net",
+    # Aggregatoren/Portale (u. a. in Overture-Daten)
+    "qype.com", "foursquare.com", "opentable.de", "opentable.com", "wlw.de",
+    "gelbeseiten.de", "dastelefonbuch.de", "branchenbuch24.com",
 }
 
 # Linktext, der selbst wie eine URL/Domain aussieht (Das Örtliche zeigt die Website
